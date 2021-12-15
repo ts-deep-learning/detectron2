@@ -8,7 +8,8 @@ import tempfile
 import time
 import warnings
 import cv2
-import tqdm
+from tqdm import tqdm
+import json
 
 from detectron2.config import get_cfg
 from detectron2.data.detection_utils import read_image
@@ -65,6 +66,11 @@ def get_parser():
         help="Minimum score for instance predictions to be shown",
     )
     parser.add_argument(
+        "--json",
+        help="Input Json path to test",
+    )
+    parser.add_argument("--source", help="Pass the data root directory")
+    parser.add_argument(
         "--opts",
         help="Modify config options using the command-line 'KEY VALUE' pairs",
         default=[],
@@ -110,6 +116,7 @@ if __name__ == "__main__":
             img = read_image(path, format="BGR")
             start_time = time.time()
             predictions, visualized_output = demo.run_on_image(img)
+            print("Predictions : ", predictions)
             logger.info(
                 "{}: {} in {:.2f}s".format(
                     path,
@@ -133,6 +140,59 @@ if __name__ == "__main__":
                 cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])
                 if cv2.waitKey(0) == 27:
                     break  # esc to quit
+    elif args.json:
+        with open(args.json, 'r') as fp:
+            gt_data = json.load(fp)
+        annotations = gt_data['dataset'][0]['annotations']
+
+        det_boxes = []
+        det_scores = []
+        det_labels = []
+        true_boxes = []
+        for annotation in tqdm(annotations):
+            # t1 = time_sync()
+            image_path = annotation['image_path']
+            bbox_coords = [b['box_coordinates'] for b in annotation['bbox_info']]
+            true_boxes.append(bbox_coords)
+            image_path = os.path.join(args.source, image_path)
+
+            img = read_image(image_path, format="BGR")
+            img_h, img_w = img.shape[:2]
+            start_time = time.time()
+            predictions, visualized_output = demo.run_on_image(img)
+            # print("preds : ", predictions)
+            # print("predictions : ", predictions["instances"].pred_boxes.tensor)
+
+            pred_box_np = predictions["instances"].pred_boxes.tensor.cpu().numpy()
+            pred_score_np = predictions["instances"].scores.cpu().numpy()
+            pred_classes_np = predictions["instances"].pred_classes.cpu().numpy()
+
+            boxes, labels, scores = [], [], []
+            for idx, pred in enumerate(pred_box_np):
+                x1 = int(pred[0])
+                y1 = int(pred[1])
+                x2 = int(pred[2])
+                y2 = int(pred[3])
+                boxes.append([x1, y1, x2, y2])
+                scores.append(float(pred_score_np[idx]))
+                labels.append(int(pred_classes_np[idx]))
+            det_boxes.append(boxes)
+            det_scores.append(scores)
+            det_labels.append(labels)
+
+        json_output = {
+            'det_boxes': det_boxes,
+            'det_labels': det_labels,
+            'det_scores': det_scores,
+            'true_boxes': true_boxes
+            }
+        filename = os.path.basename(cfg.MODEL.WEIGHTS) + '_' + str(time.time()) + '_test_results.json'
+        PATH_TO_RESULTS = os.path.dirname(cfg.MODEL.WEIGHTS)
+        results_path = os.path.join(PATH_TO_RESULTS, filename)
+        print("results : ", results_path)
+        with open(results_path, 'w') as fp:
+            json.dump(json_output, fp)
+
     elif args.webcam:
         assert args.input is None, "Cannot have both --input and --webcam!"
         assert args.output is None, "output not yet supported with --webcam!"

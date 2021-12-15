@@ -20,6 +20,7 @@ import logging
 import os
 from collections import OrderedDict
 import torch
+import wandb
 
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
@@ -38,6 +39,20 @@ from detectron2.evaluation import (
     verify_results,
 )
 from detectron2.modeling import GeneralizedRCNNWithTTA
+
+from detectron2.data.datasets import register_coco_instances
+IMG_BASE_DIR = '/mnt/ts-cvml-datastore/ts_data/datasets/cotton/detr/v1.0.2'
+TRAIN_IMGS_DIR = os.path.join(IMG_BASE_DIR, 'train_1.0.1')
+DEV_IMGS_DIR = os.path.join(IMG_BASE_DIR, 'dev_1.0.1')
+TRIAL_IMGS_DIR = os.path.join(IMG_BASE_DIR, 'trial_1.0.1')
+
+JSON_BASE_DIR = '/mnt/ts-cvml-datastore/ts_data/datasets/cotton/detr/v1.0.2/annotations/'
+TRAIN_JSON = os.path.join(JSON_BASE_DIR, 'train_1.0.1.json')
+DEV_JSON = os.path.join(JSON_BASE_DIR, 'dev_1.0.1.json')
+TRIAL_JSON = os.path.join(JSON_BASE_DIR, 'trial_1.0.1.json')
+register_coco_instances("ts_train_1.0.1", {}, TRAIN_JSON, TRAIN_IMGS_DIR)
+register_coco_instances("ts_dev_1.0.1", {}, DEV_JSON, DEV_IMGS_DIR)
+register_coco_instances("ts_trial_1.0.1", {}, TRIAL_JSON, TRIAL_IMGS_DIR)
 
 
 def build_evaluator(cfg, dataset_name, output_folder=None):
@@ -130,6 +145,8 @@ def setup(args):
 
 def main(args):
     cfg = setup(args)
+    run_name = os.path.basename(cfg.OUTPUT_DIR)
+    wandb.init(config=cfg, project='cotton', name=run_name, sync_tensorboard=True)
 
     if args.eval_only:
         model = Trainer.build_model(cfg)
